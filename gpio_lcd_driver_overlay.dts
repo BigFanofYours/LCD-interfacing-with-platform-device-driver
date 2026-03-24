@@ -1,0 +1,41 @@
+/dts-vi/;
+/plugin/;
+
+/{
+	compatible = "brcm, bcm2835";
+
+	fragment@0
+	{
+		target =<&gpio>;
+		__overlay__
+		{
+			lcd_pins: lcd_pins
+			{
+				brcm, pins = <17 27 22>;
+				brcm, function = <1>;
+				brcm, pull = <0>;
+			};
+		};
+	};
+
+	fragment@1
+	{
+		target-path = "/";
+		__overlay__ 
+		{
+			my_lcd: my_lcd@0
+			{
+				compatible = "org, gpio-lcd";
+
+				pinctrl-names = "default";
+				pinctrl-0 = <&lcd_pins>;
+
+				rs-gpios = <&gpio 17 0>;
+				en-gpios = <&gpio 27 0>;
+				data-gpios = <&gpio 22 0>;
+
+				status = "okay";
+			};
+		};
+	};
+};
