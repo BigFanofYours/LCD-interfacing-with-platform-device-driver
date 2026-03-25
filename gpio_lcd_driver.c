@@ -13,7 +13,16 @@ static struct class *class_lcd;
 
 static ssize_t lcdxy_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	return count;	
+	struct lcd_dev_private_data *lcd_data = dev_get_drvdata(dev); 
+	int ret, x, y;
+	long value;
+	ret = kstrtol(buf, 10, &value);
+	x = value / 10;
+	y = value % 10;
+	if(ret)
+		return ret;
+	ret = sprintf(lcd_data->lcdxy, "(%d, %d)", x, y);
+	return ret;	
 }
 
 static ssize_t lcdxy_show(struct device *dev, struct device_attribute *attr, char *buf)
@@ -44,6 +53,9 @@ static const struct attribute_group *lcd_attr_groups[] =
 
 static int lcd_open(struct inode *inode, struct file *filp)
 {
+	struct lcddev_private_data *lcd_data;
+	lcd_data = container_of(inode->i_cdev, struct lcddev_private_data, lcd_cdev);
+	filp->private_data = lcd_data; 
 	pr_info("Open was successful\n");
 	return 0;
 }
@@ -56,12 +68,22 @@ static int lcd_release(struct inode *inode, struct file *filp)
 
 static ssize_t lcd_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 {
-	
-	return 0;
+	return -EINVAL;
 }
 
 static ssize_t lcd_write(struct file *filp, const char __user *buf, size_t count, loff_t *f_pos)
 {
+	char kbuf[64];
+	if(count > 64)
+	{
+		pr_info("Only 64 characters are allowed\n");
+		return -EINVAL;
+	}
+	if(copy_from_user(&kbuf, buf, count))
+	{
+		return -EFAULT;
+	}
+	lcd_print_string(kbuf);
 	return 0;
 }
 
@@ -99,7 +121,7 @@ static int gpio_lcd_driver_probe(struct platform_device *pdev)
 	/* Bind device data to pdev */
 	dev_set_drvdata(dev, lcd_data);
 	
-	//lcd_init here
+	lcd_init(dev);
 
 	/* Creating character device interface */
 	ret = alloc_chrdev_region(&lcd_data->device_number, 0, 1, "lcddev");
@@ -130,8 +152,8 @@ static int gpio_lcd_driver_probe(struct platform_device *pdev)
 static void gpio_lcd_driver_remove(struct platform_device *pdev)
 {
 	struct lcddev_private_data *lcd = dev_get_drvdata(&pdev->dev);
+	device_destroy(class_lcd, lcd->device_number);
 	//lcd_deinit here
-	device_unregister(lcd->dev);
 }
 
 struct of_device_id gpio_lcd_device_match[] = 

@@ -1,3 +1,7 @@
+#include <linux/gpio/consumer.h>
+#include <linux/device.h>
+#include <linux/cdev.h>
+
 #include "gpio.h"
 #include "gpio_lcd_driver.h"
 
