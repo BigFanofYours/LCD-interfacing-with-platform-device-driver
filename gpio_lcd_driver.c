@@ -8,19 +8,20 @@
 #include <linux/cdev.h>
 #include <linux/fs.h>
 #include "gpio_lcd_driver.h"
+#include "lcd.h"
 
 static struct class *class_lcd;
 
 static ssize_t lcdxy_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct lcd_dev_private_data *lcd_data = dev_get_drvdata(dev); 
+	struct lcddev_private_data *lcd_data = dev_get_drvdata(dev); 
 	int ret, x, y;
 	long value;
 	ret = kstrtol(buf, 10, &value);
-	x = value / 10;
-	y = value % 10;
 	if(ret)
 		return ret;
+	x = value / 10;
+	y = value % 10;
 	ret = sprintf(lcd_data->lcdxy, "(%d, %d)", x, y);
 	return ret;	
 }
@@ -73,6 +74,7 @@ static ssize_t lcd_read(struct file *filp, char __user *buf, size_t count, loff_
 
 static ssize_t lcd_write(struct file *filp, const char __user *buf, size_t count, loff_t *f_pos)
 {
+	struct lcddev_private_data *lcd_data = (struct lcddev_private_data*) filp->private_data;
 	char kbuf[64];
 	if(count > 64)
 	{
@@ -83,7 +85,7 @@ static ssize_t lcd_write(struct file *filp, const char __user *buf, size_t count
 	{
 		return -EFAULT;
 	}
-	lcd_print_string(kbuf);
+	lcd_print_string(lcd_data->dev, kbuf);
 	return 0;
 }
 
@@ -104,15 +106,24 @@ static int gpio_lcd_driver_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 
 	/* Allocating memory and resources for struct and GPIOs */
-	lcd_data = devm_kzalloc(dev, sizeof(*lcd_data), GFP_KERNEL);	
+	lcd_data = devm_kzalloc(dev, sizeof(*lcd_data), GFP_KERNEL);
+	if(!lcd_data)
+		return -ENOMEM;	
 	lcd_data->gpio[LCD_RS] = devm_gpiod_get(dev, "rs", GPIOD_OUT_LOW);
 	lcd_data->gpio[LCD_EN] = devm_gpiod_get(dev, "en", GPIOD_OUT_LOW);
-	lcd_data->gpio[LCD_DATA] = devm_gpiod_get(dev, "data", GPIOD_OUT_LOW);
-	lcd_data->dev = dev;
+	lcd_data->gpio[LCD_RW] = devm_gpiod_get(dev, "rw", GPIOD_OUT_LOW);
+	lcd_data->gpio[LCD_D4] = devm_gpiod_get(dev, "d4", GPIOD_OUT_LOW);
+	lcd_data->gpio[LCD_D5] = devm_gpiod_get(dev, "d5", GPIOD_OUT_LOW);
+	lcd_data->gpio[LCD_D6] = devm_gpiod_get(dev, "d6", GPIOD_OUT_LOW);
+	lcd_data->gpio[LCD_D7] = devm_gpiod_get(dev, "d7", GPIOD_OUT_LOW);
 
 	if(IS_ERR(lcd_data->gpio[LCD_RS]) || \
-			IS_ERR(lcd_data->gpio[LCD_EN]) || \
-			IS_ERR(lcd_data->gpio[LCD_DATA]))
+		IS_ERR(lcd_data->gpio[LCD_EN]) || \
+		IS_ERR(lcd_data->gpio[LCD_RW]) || \
+		IS_ERR(lcd_data->gpio[LCD_D4]) || \
+		IS_ERR(lcd_data->gpio[LCD_D5]) || \
+		IS_ERR(lcd_data->gpio[LCD_D6]) || \
+		IS_ERR(lcd_data->gpio[LCD_D7]))
 	{ 
 		dev_err(dev, "GPIO assignment error\n");
 		return -EINVAL;
@@ -135,11 +146,12 @@ static int gpio_lcd_driver_probe(struct platform_device *pdev)
 	if(ret < 0)
 	{
 		dev_err(dev, "cdev_add failed\n");
+		unregister_chrdev_region(lcd_data->device_number, 1);
 		return ret;
 	} 
 
 	/* Creating /dev and sysfs attributes */
-	lcd_data->dev = device_create_with_groups(class_lcd, &pdev->dev, 0, lcd_data, lcd_attr_groups, "LCD");
+	struct device *char_dev = device_create_with_groups(class_lcd, &pdev->dev, lcd_data->device_number, lcd_data, lcd_attr_groups, "LCD");
 	if(IS_ERR(lcd_data->dev))
 	{
 		dev_err(dev, "Error creating class entry\n");
@@ -153,7 +165,9 @@ static void gpio_lcd_driver_remove(struct platform_device *pdev)
 {
 	struct lcddev_private_data *lcd = dev_get_drvdata(&pdev->dev);
 	device_destroy(class_lcd, lcd->device_number);
-	//lcd_deinit here
+	cdev_del(&lcd->lcd_cdev);
+	unregister_chrdev_region(lcd->device_number, 1);
+	lcd_deinit(&pdev->dev);
 }
 
 struct of_device_id gpio_lcd_device_match[] = 
@@ -169,7 +183,7 @@ struct platform_driver gpio_lcd_driver =
 	.driver = 
 	{
 		.name = "gpio-lcd",
-		.of_match_table = of_match_ptr(gpio_lcd_device_match())
+		.of_match_table = of_match_ptr(gpio_lcd_device_match)
 	}
 };
 

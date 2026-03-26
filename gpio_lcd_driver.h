@@ -1,13 +1,20 @@
 #ifndef GPIO_LCD_DRIVER_H
 #define GPIO_LCD_DRIVER_H
 
-#define GPIO_LINES 3
+#include <linux/cdev.h>
+#include <linux/device.h>
+
+#define GPIO_LINES 7
 
 enum
 {
         LCD_RS,
         LCD_EN,
-        LCD_DATA
+        LCD_RW,
+	LCD_D4,
+	LCD_D5,
+	LCD_D6,
+	LCD_D7
 };
 
 struct lcddev_private_data
